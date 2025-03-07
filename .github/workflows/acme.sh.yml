@@ -1,0 +1,64 @@
+name: "ACME SH"
+on:
+  schedule:
+    - cron: "0 16 30 1,3,5,7,9,11 *"
+  workflow_dispatch:
+jobs:
+  acme-cert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+      - name: "Install acme.sh"
+        env:
+          ACME_SH_DIR: "/tmp/acme.sh"
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: |
+          wget https://github.com/acmesh-official/acme.sh/archive/master.tar.gz -O /tmp/master.tar.gz
+          tar -xzvf /tmp/master.tar.gz -C /tmp
+          cd /tmp/acme.sh-master
+          ./acme.sh --install --nocron --home $ACME_SH_DIR -m "webmaster@$DOMAIN"
+      - name: "Request SSL Certificate"
+        env:
+          ACME_SH_DIR: "/tmp/acme.sh"
+          CERT_DIR: /tmp/certs
+          DOMAIN: ${{ vars.DOMAIN }}
+          DNS_API: ${{ vars.DNS_API }}
+          CF_Token: ${{ secrets.CF_TOKEN }}
+          CF_Account_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_Zone_ID: ${{ secrets.CF_ZONE_ID }}
+          Ali_Key: ${{ secrets.ALI_KEY }}
+          Ali_Secret: ${{ secrets.ALI_SECRET }}
+          DP_Id: ${{ secrets.DP_ID }}
+          DP_Key: ${{ secrets.DP_KEY }}
+          Tencent_SecretId: ${{ secrets.TENCENT_SECRETID }}
+          Tencent_SecretKey: ${{ secrets.TENCENT_SECRETKEY }}
+        run: |
+          mkdir -p $CERT_DIR
+          $ACME_SH_DIR/acme.sh --home "$ACME_SH_DIR"  --issue --dns $DNS_API -d $DOMAIN -d "*.$DOMAIN"  --server letsencrypt
+          $ACME_SH_DIR/acme.sh --home "$ACME_SH_DIR" --installcert -d $DOMAIN -d "*.$DOMAIN" \
+            --key-file $CERT_DIR/www.key  --cert-file $CERT_DIR/www.cer \
+            --ca-file $CERT_DIR/www.ca.cer --fullchain-file $CERT_DIR/www.fullchain.cer
+      - name: Generate Release Notes
+        run: |
+          echo "release on $(TZ='Asia/Singapore' date '+%Y-%m-%d %H:%M:%S')" > /tmp/CHANGELOG.txt
+      - name: Create Release SSL Certs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: certs
+          name: Release SSL Certificate
+          body_path: /tmp/CHANGELOG.txt
+          draft: false
+          prerelease: false
+          files: |
+            /tmp/certs/*
+      - name: Update CHANGELOG.txt
+        run: |
+          log="release on $(TZ='Asia/Singapore' date '+%Y-%m-%d %H:%M:%S')"
+          echo "This is a scheduled update to prevent GitHub Actions suspension" >> CHANGELOG.txt
+          echo "$log" >> CHANGELOG.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "$log"
+          git push
